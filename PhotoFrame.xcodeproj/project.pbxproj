@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		79AB56302CA1A6F200C973B2 /* ArgumentParser in Frameworks */ = {isa = PBXBuildFile; productRef = 79AB562F2CA1A6F200C973B2 /* ArgumentParser */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXCopyFilesBuildPhase section */
 		79AB561E2CA1A67500C973B2 /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
@@ -35,6 +39,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				79AB56302CA1A6F200C973B2 /* ArgumentParser in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -77,6 +82,7 @@
 			);
 			name = PhotoFrame;
 			packageProductDependencies = (
+				79AB562F2CA1A6F200C973B2 /* ArgumentParser */,
 			);
 			productName = PhotoFrame;
 			productReference = 79AB56202CA1A67500C973B2 /* PhotoFrame */;
@@ -94,6 +100,7 @@
 				TargetAttributes = {
 					79AB561F2CA1A67500C973B2 = {
 						CreatedOnToolsVersion = 16.0;
+						LastSwiftMigration = 1600;
 					};
 				};
 			};
@@ -106,6 +113,9 @@
 			);
 			mainGroup = 79AB56172CA1A67500C973B2;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				79AB562E2CA1A6F200C973B2 /* XCRemoteSwiftPackageReference "swift-argument-parser" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 79AB56212CA1A67500C973B2 /* Products */;
 			projectDirPath = "";
@@ -248,10 +258,16 @@
 		79AB56282CA1A67500C973B2 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = PhotoFrame/PhotoFrame.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = TNX4XRN7D3;
 				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Access needed for exporting photos";
+				PRODUCT_BUNDLE_IDENTIFIER = wardy.PhotoFrame;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
@@ -259,9 +275,14 @@
 		79AB56292CA1A67500C973B2 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = PhotoFrame/PhotoFrame.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = TNX4XRN7D3;
 				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Access needed for exporting photos";
+				PRODUCT_BUNDLE_IDENTIFIER = wardy.PhotoFrame;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 			};
@@ -289,6 +310,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		79AB562E2CA1A6F200C973B2 /* XCRemoteSwiftPackageReference "swift-argument-parser" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-argument-parser.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.5.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		79AB562F2CA1A6F200C973B2 /* ArgumentParser */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 79AB562E2CA1A6F200C973B2 /* XCRemoteSwiftPackageReference "swift-argument-parser" */;
+			productName = ArgumentParser;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 79AB56182CA1A67500C973B2 /* Project object */;
 }
