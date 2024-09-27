@@ -10,6 +10,14 @@ import Photos
 import ArgumentParser
 import AppKit
 
+enum Format: String, ExpressibleByArgument {
+    case png, jpg
+}
+
+enum Naming: String, ExpressibleByArgument {
+    case date, id
+}
+
 @main
 struct Args: ParsableCommand {
     @Option(name: [.short, .customLong("width")], help: "Width of the images to generate")
@@ -21,23 +29,24 @@ struct Args: ParsableCommand {
     @Flag(name: [.short, .customLong("verbose")], help: "Verbose output")
     var verbose: Bool = false
 
-    @Option(name: [.short, .customLong("skip")], help: "Skip album path")
-    var skipAlbum: [String] = []
+    @Flag(name: [.short, .customLong("flatten")], help: "Single directory level in the output directory")
+    var flatten: Bool = false
 
-    @Option(name: [.customShort("r"), .customLong("skipre")], help: "Skip album path matching regular expression")
+    @Option(name: [.customShort("r"), .customLong("skip")], help: "Skip album path matching regular expression")
     var skipAlbumRe: [String] = []
 
     @Argument(help: "Output directory")
     var outputDir: String
     
+    @Option(name: [.customShort("f"), .customLong("format")], help: "Output image format")
+    var format: Format = .jpg
+
+    @Option(name: [.customShort("n"), .customLong("naming")], help: "Image file name format")
+    var naming: Naming = .date
+
     func run() throws {
         // Build skip regular expressions
         var skipRe: Array<Regex<AnyRegexOutput>> = []
-        
-        // Add literal skips
-        for skip in self.skipAlbumRe {
-            skipRe.append(Regex(verbatim: skip))
-        }
         
         // Add regular expression skips
         for skip in self.skipAlbumRe {
@@ -45,7 +54,7 @@ struct Args: ParsableCommand {
                 let re = try Regex(skip);
                 skipRe.append(re)
             } catch {
-                print("Regular expression \(skip) is not valid: \(error)")
+                print("Regular expression '\(skip)' is not valid: \(error)")
                 return
             }
         }
@@ -157,29 +166,35 @@ func WalkColl(coll: PHFetchResult<PHCollection>, state: State, walkState: WalkSt
             }
         }
         
-        // Calculate file system directory
-        let dir = state.args.outputDir.appending("/" + path)
-        
-        // If directory already exists then skip
-        if FileManager.default.fileExists(atPath: dir) {
-            if state.args.verbose {
-                print("Skipping \(path) (directory \(dir) already exists)")
+        if coll.canContainAssets {
+            // Calculate file system directory
+            let dir = if state.args.flatten {
+                state.args.outputDir.appending("/" + path.replacingOccurrences(of: "/", with: "_"))
+            } else {
+                state.args.outputDir.appending("/" + path)
             }
             
-            return
-        }
+            // If directory already exists then skip
+            if FileManager.default.fileExists(atPath: dir) {
+                if state.args.verbose {
+                    print("Skipping \(path) (directory \(dir) already exists)")
+                }
+            } else {
+                // Process assets in this collection
+                if state.args.verbose {
+                    print("Processing assets in \(path)")
+                }
 
-        if state.args.verbose {
-            print("Processing \(path)")
-        }
-        
-        if coll.canContainAssets {
-            // Process assets in this collection
-            ProcessAssets(coll: coll, state: state, dir: dir)
+                ProcessAssets(coll: coll, state: state, dir: dir)
+            }
         }
         
         if coll.canContainCollections {
             // Process collections in this collection
+            if state.args.verbose {
+                print("Processing collections in \(path)")
+            }
+            
             let next = PHCollection.fetchCollections(in: coll as! PHCollectionList, options: nil)
             WalkColl(coll: next, state: state, walkState: curWalkState)
         }
@@ -204,38 +219,93 @@ func ProcessAssets(coll: PHCollection, state: State, dir: String) {
 /// Walks a list of photo library assets, checks if the aspect ratio is compatible with the output and processes
 func WalkAssets(assets: PHFetchResult<PHAsset>, state: State, dir: String) -> Void {
     assets.enumerateObjects { asset, int, ptr in
-        // Calculate the aspect ratio of the image
-        let aspect = Double(asset.pixelWidth) / Double(asset.pixelHeight)
+        if CheckAsset(asset: asset, state: state) {
+            ProcessAsset(asset: asset, state: state, dir: dir)
+        }
+    }
+}
 
-        // Check aspect ratio of the image
-        if state.targetAspect < 1 {
-            // Want portrait
-            if aspect > 1 {
-                if state.args.verbose {
-                    print("Skipping asset", asset.localIdentifier, "(landscape)")
-                }
-                
-                return
-            }
-        } else if state.targetAspect > 1 {
-            // Want landscape
-            if aspect < 1 {
-                if state.args.verbose {
-                    print("Skipping asset", asset.localIdentifier, "(portrait)")
-                }
+func CheckAsset(asset: PHAsset, state: State) -> Bool {
+    let assetDesc = "\(asset.localIdentifier) size \(asset.pixelWidth)x\(asset.pixelHeight)"
+    
+    // Calculate the aspect ratio of the image
+    let aspect = Double(asset.pixelWidth) / Double(asset.pixelHeight)
 
-                return
+    func checkTooTall() -> Bool {
+        if (Double(asset.pixelHeight) * (Double(state.args.width) / Double(asset.pixelWidth))) > (2.0 * Double(state.args.height)) {
+            // Asset is too tall
+            if state.args.verbose {
+                print("Skipping asset \(assetDesc) (too tall)")
             }
-        } else {
-            // Want square - accept all
+
+            return false
         }
         
-        if state.args.verbose {
-            print("Processing asset", asset.localIdentifier, "size", asset.pixelWidth, "x", asset.pixelHeight)
+        return true
+    }
+    
+    func checkTooWide() -> Bool {
+        if (Double(asset.pixelWidth) * (Double(state.args.height) / Double(asset.pixelHeight))) > (2.0 * Double(state.args.width)) {
+            // Asset is too wide
+            if state.args.verbose {
+                print("Skipping asset \(assetDesc) (too wide)")
+            }
+
+            return false
         }
 
-        ProcessAsset(asset: asset, state: state, dir: dir)
+        return true
     }
+
+    // Check aspect ratio of the image
+    if state.targetAspect < 1 {
+        // Want portrait
+        if aspect > 1 {
+            // Asset is landscape
+            if state.args.verbose {
+                print("Skipping asset \(assetDesc) (landscape)")
+            }
+            
+            return false
+        }
+        
+        if !checkTooTall() {
+            return false
+        }
+    } else if state.targetAspect > 1 {
+        // Want landscape
+        if aspect < 1 {
+            // Asset is portrait
+            if state.args.verbose {
+                print("Skipping asset \(assetDesc) (portrait)")
+            }
+
+            return false
+        }
+        
+        if !checkTooWide() {
+            return false
+        }
+    } else {
+        // Want square
+        if aspect < 1 {
+            // Asset is portrait
+            if !checkTooTall() {
+                return false
+            }
+        } else {
+            // Asset is landscape / square
+            if !checkTooWide() {
+                return false
+            }
+        }
+    }
+    
+    if state.args.verbose {
+        print("Processing asset \(assetDesc)")
+    }
+
+    return true
 }
 
 /// Converts a photo library asset to an image and saves it
@@ -256,9 +326,6 @@ func ProcessAsset(asset: PHAsset, state: State, dir: String) {
     state.imgmgr.requestImage(for: asset, targetSize: size, contentMode: .aspectFill , options: options, resultHandler: { (data, info) in
         // Got image data?
         if let data = data {
-            // Work out target file name
-            let file = dir.appending("/" + asset.localIdentifier.replacingOccurrences(of: "/", with: "_") + ".png")
-
             // Does the directory exist?
             if !FileManager.default.fileExists(atPath: dir) {
                 // Create URL for directory
@@ -273,13 +340,19 @@ func ProcessAsset(asset: PHAsset, state: State, dir: String) {
                 }
             }
             
-            // Build URL for file
-            let fileUrl = URL(filePath: file)
-            
-            // Save the image at the file URL
-            if saveImage(data, atUrl: fileUrl) {
+            // Work out target file name stub
+            let fileStub = switch state.args.naming {
+            case .date: (asset.creationDate ?? Date()).ISO8601Format(Date.ISO8601FormatStyle())
+            case .id: asset.localIdentifier
+            }
+
+            // Build target path
+            let file = dir.appending("/" + fileStub.replacingOccurrences(of: "/", with: "_"))
+
+            // Save the image at the file
+            if saveImage(data, format: state.args.format, file: file) {
                 if state.args.verbose {
-                    print("Image saved to \(file)")
+                    print("Image saved to \(fileStub)")
                 }
             }
         } else {
@@ -290,27 +363,41 @@ func ProcessAsset(asset: PHAsset, state: State, dir: String) {
 }
 
 /// Save NSImage to file given by URL
-func saveImage(_ image: NSImage, atUrl url: URL) -> Bool {
+func saveImage(_ image: NSImage, format: Format, file: String) -> Bool {
+    // Get output format details
+    let (ext, repr) = switch format {
+    case .jpg: (".jpg", NSBitmapImageRep.FileType.jpeg)
+    case .png: (".png", NSBitmapImageRep.FileType.png)
+    }
+
+    // Build URL for file
+    let url = URL(filePath: file + ext)
+
+    // Convert to CGImage
     guard
         let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
     else {
         print("ERROR: Failed to create cgImage from NSImage")
         return false
     }
-    
+
+    // Get NSBitmapImageRep from CGImage
     let newRep = NSBitmapImageRep(cgImage: cgImage)
-    
+
+    // Output size = input size
     newRep.size = image.size
-    
+
+    // Convert to target image type
     guard
-        let pngData = newRep.representation(using: .png, properties: [:])
+        let imgData = newRep.representation(using: repr, properties: [:])
     else {
-        print("ERROR: Failed to create png from NSBitmapImageRep")
+        print("ERROR: Failed to create output image from NSBitmapImageRep")
         return false
     }
 
+    // Write to the output file
     do {
-        try pngData.write(to: url)
+        try imgData.write(to: url)
     }
     catch {
         print("ERROR: Failed to save \(url): \(error)")
@@ -322,20 +409,27 @@ func saveImage(_ image: NSImage, atUrl url: URL) -> Bool {
 
 /// Get authorisation to access the photos library
 func GetAuth() async -> Bool {
+    // Get authorisation status
     var status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
 
     if status == .notDetermined {
+        // Not determined - so request it
         status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
     }
 
-    switch status {
-        case .authorized: print("Authorized")
-        case .notDetermined: print("Authorisation could not be determined")
-        case .denied: print("Access to photos library is denied")
-        case .restricted: print("Access to photos library is restricted")
-        case .limited: print("Access to photos library is limited")
-        default: print("Unknown authorisation status", status)
+    if status == .authorized {
+        // Authorised for access
+        return true
     }
 
-    return status == .authorized
+    // Not authorised for access
+    switch status {
+        case .notDetermined: print("Photo library authorisation could not be determined")
+        case .denied: print("Access to photo library is denied")
+        case .restricted: print("Access to photo library is restricted")
+        case .limited: print("Access to photo library is limited")
+        default: print("Unknown photo library authorisation status", status)
+    }
+
+    return false
 }
