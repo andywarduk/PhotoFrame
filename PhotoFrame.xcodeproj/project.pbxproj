@@ -285,9 +285,11 @@
 				CODE_SIGN_ENTITLEMENTS = PhotoFrame/PhotoFrame.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
+				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
 				DEVELOPMENT_TEAM = TNX4XRN7D3;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Access needed for exporting photos";
 				PRODUCT_BUNDLE_IDENTIFIER = wardy.PhotoFrame;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -303,9 +305,11 @@
 				CODE_SIGN_ENTITLEMENTS = PhotoFrame/PhotoFrame.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
+				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
 				DEVELOPMENT_TEAM = TNX4XRN7D3;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Access needed for exporting photos";
 				PRODUCT_BUNDLE_IDENTIFIER = wardy.PhotoFrame;
 				PRODUCT_NAME = "$(TARGET_NAME)";

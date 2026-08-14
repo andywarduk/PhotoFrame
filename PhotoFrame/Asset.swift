@@ -5,19 +5,22 @@
 //  Created by Andrew Ward on 30/09/2024.
 //
 
+import Foundation
 import Photos
-
-/// Maximum size multiple to allow
-let maxMultiple: Double = 2.0
 
 extension PHAsset {
     /// Returns a description of the asset suitable for output
     func assetDescription() -> String {
         return "\(self.localIdentifier) size \(self.pixelWidth)x\(self.pixelHeight)"
     }
+
+    /// Aspect ratio of the asset (width / height)
+    var aspectRatio: Double {
+        Double(self.pixelWidth) / Double(self.pixelHeight)
+    }
 }
 
-/// Fetches the assets from a collection and processes
+/// Fetches the assets from a collection and processes them concurrently
 func processAssets(coll: PHAssetCollection, state: State, dir: String) {
     // Set up fetch options
     let options = PHFetchOptions()
@@ -28,24 +31,31 @@ func processAssets(coll: PHAssetCollection, state: State, dir: String) {
     // Fetch collection assets
     let assets = PHAsset.fetchAssets(in: coll, options: options)
 
-    // Walk the assets
-    assets.enumerateObjects { asset, _, _ in
-        if state.assetCheck(asset, state) {
-            if state.args.verbose {
-                print("Processing asset \(asset.assetDescription())")
-            }
+    // Guards directory creation below against races between concurrently processed assets.
+    // PHImageManager's synchronous requestImage is safe to call concurrently, so assets are
+    // processed in parallel via concurrentPerform; this call blocks until every asset in the
+    // collection has been handled, so it's still safe for the caller to treat processAssets
+    // as synchronous (e.g. to write a completion marker afterwards).
+    let dirLock = NSLock()
 
-            processAsset(asset: asset, state: state, dir: dir)
+    DispatchQueue.concurrentPerform(iterations: assets.count) { index in
+        let asset = assets.object(at: index)
+
+        guard state.assetCheck(asset, state) else {
+            return
         }
+
+        if state.args.verbose {
+            print("Processing asset \(asset.assetDescription())")
+        }
+
+        processAsset(asset: asset, state: state, dir: dir, dirLock: dirLock)
     }
 }
 
 /// Checks an asset is portrait and not too tall
 func checkAssetPortrait(asset: PHAsset, state: State) -> Bool {
-    // Calculate the aspect ratio of the image
-    let aspect = Double(asset.pixelWidth) / Double(asset.pixelHeight)
-
-    if aspect > 1 {
+    if asset.aspectRatio > 1 {
         // Asset is landscape
         if state.args.verbose {
             print("Skipping asset \(asset.assetDescription()) (landscape)")
@@ -54,20 +64,12 @@ func checkAssetPortrait(asset: PHAsset, state: State) -> Bool {
         return false
     }
 
-    // Check it's not too tall
-    if !checkTooTall(asset: asset, state: state) {
-        return false
-    }
-
-    return true
+    return checkTooTall(asset: asset, state: state)
 }
 
 /// Checks an asset is landscape and not too wide
 func checkAssetLandscape(asset: PHAsset, state: State) -> Bool {
-    // Calculate the aspect ratio of the image
-    let aspect = Double(asset.pixelWidth) / Double(asset.pixelHeight)
-
-    if aspect < 1 {
+    if asset.aspectRatio < 1 {
         // Asset is portrait
         if state.args.verbose {
             print("Skipping asset \(asset.assetDescription()) (portrait)")
@@ -76,39 +78,24 @@ func checkAssetLandscape(asset: PHAsset, state: State) -> Bool {
         return false
     }
 
-    // Check it's not too wide
-    if !checkTooWide(asset: asset, state: state) {
-        return false
-    }
-
-    return true
+    return checkTooWide(asset: asset, state: state)
 }
 
 /// Checks an asset will fit a square frame
 func checkAssetSquare(asset: PHAsset, state: State) -> Bool {
-    // Calculate the aspect ratio of the image
-    let aspect = Double(asset.pixelWidth) / Double(asset.pixelHeight)
-
-    // Want square
-    if aspect < 1 {
+    if asset.aspectRatio < 1 {
         // Asset is portrait - check it's not too tall
-        if !checkTooTall(asset: asset, state: state) {
-            return false
-        }
+        return checkTooTall(asset: asset, state: state)
     } else {
         // Asset is landscape / square - check it's not too wide
-        if !checkTooWide(asset: asset, state: state) {
-            return false
-        }
+        return checkTooWide(asset: asset, state: state)
     }
-
-    return true
 }
 
 /// Checks if an asset is too tall
 private func checkTooTall(asset: PHAsset, state: State) -> Bool {
     if (Double(asset.pixelHeight) * (Double(state.args.width) / Double(asset.pixelWidth)))
-        > (maxMultiple * Double(state.args.height)) {
+        > (state.args.maxMultiple * Double(state.args.height)) {
         // Asset is too tall
         if state.args.verbose {
             print("Skipping asset \(asset.assetDescription()) (too tall)")
@@ -123,7 +110,7 @@ private func checkTooTall(asset: PHAsset, state: State) -> Bool {
 /// Checks if an asset is too wide
 private func checkTooWide(asset: PHAsset, state: State) -> Bool {
     if (Double(asset.pixelWidth) * (Double(state.args.height) / Double(asset.pixelHeight)))
-        > (maxMultiple * Double(state.args.width)) {
+        > (state.args.maxMultiple * Double(state.args.width)) {
         // Asset is too wide
         if state.args.verbose {
             print("Skipping asset \(asset.assetDescription()) (too wide)")
@@ -136,7 +123,7 @@ private func checkTooWide(asset: PHAsset, state: State) -> Bool {
 }
 
 /// Converts a photo library asset to an image and saves it
-private func processAsset(asset: PHAsset, state: State, dir: String) {
+private func processAsset(asset: PHAsset, state: State, dir: String, dirLock: NSLock) {
     // Build target CGSize
     let size = CGSize(width: Double(state.args.width), height: Double(state.args.height))
 
@@ -155,9 +142,9 @@ private func processAsset(asset: PHAsset, state: State, dir: String) {
     ) { data, _ in
         // Got image data?
         if let data = data {
-            if let file = assetPath(asset: asset, state: state, dir: dir) {
+            if let file = assetPath(asset: asset, state: state, dir: dir, dirLock: dirLock) {
                 // Save the image at the file
-                if saveImage(data, format: state.args.format, file: file) {
+                if saveImage(data, format: state.args.format, quality: state.args.quality, file: file) {
                     if state.args.verbose {
                         print("Image saved to \(file)")
                     }
@@ -170,7 +157,12 @@ private func processAsset(asset: PHAsset, state: State, dir: String) {
     }
 }
 
-private func assetPath(asset: PHAsset, state: State, dir: String) -> String? {
+private func assetPath(asset: PHAsset, state: State, dir: String, dirLock: NSLock) -> String? {
+    // Directory creation is shared across concurrently processed assets in the same
+    // collection, so it must be serialized to avoid a race between the exists-check and create
+    dirLock.lock()
+    defer { dirLock.unlock() }
+
     // Does the directory exist?
     if !FileManager.default.fileExists(atPath: dir) {
         // Create URL for directory

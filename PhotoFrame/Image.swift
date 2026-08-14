@@ -9,7 +9,7 @@ import Foundation
 import AppKit
 
 /// Save NSImage to file given by URL
-func saveImage(_ image: NSImage, format: Format, file: String) -> Bool {
+func saveImage(_ image: NSImage, format: Format, quality: Double, file: String) -> Bool {
     // Get output format details
     let (ext, repr) = switch format {
     case .jpg: (".jpg", NSBitmapImageRep.FileType.jpeg)
@@ -30,12 +30,20 @@ func saveImage(_ image: NSImage, format: Format, file: String) -> Bool {
     // Get NSBitmapImageRep from CGImage
     let newRep = NSBitmapImageRep(cgImage: cgImage)
 
-    // Output size = input size
-    newRep.size = image.size
+    // Output size in pixels, 1:1 with the pixel data. Using the source NSImage's `size`
+    // (which is in points) instead can silently mismatch the actual pixel dimensions under
+    // a Retina scale factor, so it's derived directly from the CGImage here instead.
+    newRep.size = CGSize(width: cgImage.width, height: cgImage.height)
+
+    // Compression quality only applies to JPEG output
+    var properties: [NSBitmapImageRep.PropertyKey: Any] = [:]
+    if format == .jpg {
+        properties[.compressionFactor] = quality
+    }
 
     // Convert to target image type
     guard
-        let imgData = newRep.representation(using: repr, properties: [:])
+        let imgData = newRep.representation(using: repr, properties: properties)
     else {
         print("ERROR: Failed to create output image from NSBitmapImageRep")
         return false
